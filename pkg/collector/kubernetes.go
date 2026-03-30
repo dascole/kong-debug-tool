@@ -29,7 +29,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -65,6 +64,10 @@ func CollectKubernetes(ctx context.Context, cfg *Config) ([]string, error) {
 
 	log.Info("Running Kubernetes collection")
 
+	if cfg.Namespace == "" {
+		return nil, fmt.Errorf("namespace is required for Kubernetes collection; use --namespace to specify")
+	}
+
 	// Pre-allocate with reasonable capacity
 	kongK8sPods := make([]corev1.Pod, 0, 20)
 	filesToZip := make([]string, 0, 50)
@@ -75,18 +78,13 @@ func CollectKubernetes(ctx context.Context, cfg *Config) ([]string, error) {
 		return nil, err
 	}
 
-	pl, err := kubeClient.CoreV1().Pods("").List(ctx, v1.ListOptions{})
+	pl, err := kubeClient.CoreV1().Pods(cfg.Namespace).List(ctx, v1.ListOptions{})
 	if err != nil {
 		log.WithError(err).Error("Failed to list pods")
 		return nil, err
 	}
 
-	// Check for environment variable override
 	targetPods := cfg.TargetPods
-	if os.Getenv("TARGET_PODS") != "" {
-		targetPods = strings.Split(os.Getenv("TARGET_PODS"), ",")
-		log.WithField("targetPods", targetPods).Info("Using target pods from environment")
-	}
 
 	// To keep track of whether a particular pod has been added already.
 	foundPod := make(map[string]bool)
@@ -272,15 +270,7 @@ func writePodDetails(ctx context.Context, clientSet kubernetes.Interface, podLis
 
 			log.WithField("container", container.Name).Info("Processing container logs")
 
-			// Check for environment variable override
 			logsSinceSeconds := cfg.K8sLogsSinceSeconds
-			if os.Getenv("K8S_LOGS_SINCE_SECONDS") != "" {
-				var err error
-				logsSinceSeconds, err = strconv.ParseInt(os.Getenv("K8S_LOGS_SINCE_SECONDS"), 10, 64)
-				if err != nil {
-					log.WithError(err).Warn("Invalid K8S_LOGS_SINCE_SECONDS value, using default")
-				}
-			}
 
 			lineLimit := cfg.LineLimit
 			podLogOpts := corev1.PodLogOptions{Container: container.Name}

@@ -51,6 +51,10 @@ type Config struct {
 	// If empty, all pods matching TargetImages will be collected.
 	TargetPods []string
 
+	// Namespace scopes Kubernetes pod collection to a single namespace.
+	// Required when Runtime is kubernetes.
+	Namespace string
+
 	// DisableKDD disables Kong configuration (KDD) collection.
 	// Default: false
 	DisableKDD bool
@@ -61,7 +65,7 @@ type Config struct {
 	DumpWorkspaceConfigs bool
 
 	// SanitizeConfigs enables sanitization of sensitive data in config dumps.
-	// Default: false
+	// Default: true
 	SanitizeConfigs bool
 
 	// KonnectMode enables Konnect API mode for collection.
