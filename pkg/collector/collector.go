@@ -62,9 +62,6 @@ func Collect(ctx context.Context, cfg *Config) (*Result, error) {
 
 	// Determine runtime
 	runtime := cfg.Runtime
-	if runtime == "" {
-		runtime = os.Getenv("KONG_RUNTIME")
-	}
 
 	if runtime == "" {
 		log.Info("No runtime detected, attempting to guess runtime...")
@@ -113,16 +110,11 @@ func Collect(ctx context.Context, cfg *Config) (*Result, error) {
 	}
 
 	// Handle KDD collection
-	disableKDD := cfg.DisableKDD
-	if os.Getenv("DISABLE_KDD") != "" {
-		disableKDD = (os.Getenv("DISABLE_KDD") == "true")
-	}
-
-	if disableKDD && cfg.DumpWorkspaceConfigs {
+	if cfg.DisableKDD && cfg.DumpWorkspaceConfigs {
 		log.Warn("Cannot create workspaces dumps when KDD collection is disabled")
 	}
 
-	if !disableKDD {
+	if !cfg.DisableKDD {
 		log.Info("KDD collection is enabled")
 
 		kddFiles, err := CollectKDD(ctx, cfg)
@@ -137,7 +129,7 @@ func Collect(ctx context.Context, cfg *Config) (*Result, error) {
 	// Create the archive
 	log.Info("Writing tar.gz output")
 
-	archivePath, err := CreateArchive(filesToZip)
+	archivePath, err := CreateArchive(filesToZip, cfg.OutputDir)
 	if err != nil {
 		log.WithError(err).Error("Error writing tar.gz file")
 		return nil, err
@@ -151,22 +143,20 @@ func Collect(ctx context.Context, cfg *Config) (*Result, error) {
 	}, nil
 }
 
-// initLogging sets up logrus with standard configuration.
+// initLogging sets up logrus configuration.
+// When cfg.Logger is set (library mode), only redirects logrus output to that writer.
+// When cfg.Logger is nil (standalone mode), configures logrus globally with formatting.
 func initLogging(cfg *Config) {
-	// Configure logrus with timestamp, level, and caller information
-	log.SetFormatter(&log.TextFormatter{
-		FullTimestamp:   true,
-		TimestampFormat: "2006-01-02 15:04:05",
-	})
-
-	// Set output
 	if cfg.Logger != nil {
 		log.SetOutput(cfg.Logger)
 	} else {
+		log.SetFormatter(&log.TextFormatter{
+			FullTimestamp:   true,
+			TimestampFormat: "2006-01-02 15:04:05",
+		})
 		log.SetOutput(os.Stdout)
 	}
 
-	// Set log level
 	if cfg.Debug {
 		log.SetLevel(log.DebugLevel)
 	} else {

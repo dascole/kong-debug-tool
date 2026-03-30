@@ -30,7 +30,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -51,25 +50,10 @@ func CollectKDD(ctx context.Context, cfg *Config) ([]string, error) {
 	var finalResponse = make(map[string]interface{})
 	var filesToZip []string
 
-	// Check for environment variable overrides
-	konnectMode := cfg.KonnectMode
-	if os.Getenv("KONG_KONNECT_MODE") != "" {
-		// avoid reusing native Kong variable names, i.e. KONG_KONNECT_MODE
-		// https://docs.konghq.com/gateway/latest/reference/configuration/#konnect_mode
-		konnectMode, _ = strconv.ParseBool(os.Getenv("KONG_KDD_KONNECT"))
-	}
-
 	kongAddr := cfg.KongAddr
-	if os.Getenv("KONG_ADDR") != "" {
-		kongAddr = os.Getenv("KONG_ADDR")
-	}
-
 	deckHeaders := cfg.RBACHeaders
-	if os.Getenv("RBAC_HEADER") != "" {
-		deckHeaders = strings.Split(os.Getenv("RBAC_HEADER"), ",")
-	}
 
-	if !konnectMode {
+	if !cfg.KonnectMode {
 		// Get the Kong client
 		client, err := utils.GetKongClient(utils.KongClientConfig{
 			Address: kongAddr,
@@ -141,10 +125,6 @@ func CollectKDD(ctx context.Context, cfg *Config) ([]string, error) {
 		finalResponse["summary_info"] = summaryInfo
 
 		createWorkspaceConfigDumps := cfg.DumpWorkspaceConfigs
-		if os.Getenv("DUMP_WORKSPACE_CONFIGS") != "" {
-			log.WithField("env_var", os.Getenv("DUMP_WORKSPACE_CONFIGS")).Debug("Dump workspace configs environment variable found")
-			createWorkspaceConfigDumps = (os.Getenv("DUMP_WORKSPACE_CONFIGS") == "true")
-		}
 
 		// Process workspaces in parallel with controlled concurrency
 		var wg sync.WaitGroup
@@ -396,30 +376,32 @@ func CollectKDD(ctx context.Context, cfg *Config) ([]string, error) {
 	summaryInfo.TotalTargetCount = len(rawState.Targets)
 	summaryInfo.TotalUpstreamCount = len(rawState.Upstreams)
 
-	ks, err := state.Get(rawState)
-	if err != nil {
-		log.WithError(err).Error("Failed building state")
-		return nil, fmt.Errorf("building state: %w", err)
-	}
+	if cfg.DumpWorkspaceConfigs {
+		ks, err := state.Get(rawState)
+		if err != nil {
+			log.WithError(err).Error("Failed building state")
+			return nil, fmt.Errorf("building state: %w", err)
+		}
 
-	filename := "konnect-" + controlPlaneName + ".yaml"
-	err = sanitizeKongState(ctx, kongClient, ks, file.WriteConfig{
-		SelectTags:       dumpConfig.SelectorTags,
-		Filename:         filename,
-		FileFormat:       file.YAML,
-		WithID:           true,
-		ControlPlaneName: controlPlaneName,
-		KongVersion:      "3.5.0.0", // placeholder
-	}, true, cfg.SanitizeConfigs)
+		filename := "konnect-" + controlPlaneName + ".yaml"
+		err = sanitizeKongState(ctx, kongClient, ks, file.WriteConfig{
+			SelectTags:       dumpConfig.SelectorTags,
+			Filename:         filename,
+			FileFormat:       file.YAML,
+			WithID:           true,
+			ControlPlaneName: controlPlaneName,
+			KongVersion:      "3.5.0.0", // placeholder
+		}, true, cfg.SanitizeConfigs)
 
-	if err != nil {
-		log.WithFields(log.Fields{
-			"controlPlane": controlPlaneName,
-			"error":        err,
-		}).Error("Failed building Kong dump file")
-	} else {
-		log.WithField("controlPlane", controlPlaneName).Info("Successfully dumped Control Plane")
-		filesToZip = append(filesToZip, filename)
+		if err != nil {
+			log.WithFields(log.Fields{
+				"controlPlane": controlPlaneName,
+				"error":        err,
+			}).Error("Failed building Kong dump file")
+		} else {
+			log.WithField("controlPlane", controlPlaneName).Info("Successfully dumped Control Plane")
+			filesToZip = append(filesToZip, filename)
+		}
 	}
 
 	finalResponse["summary_info"] = summaryInfo

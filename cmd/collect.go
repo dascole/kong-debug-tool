@@ -24,6 +24,9 @@ package cmd
 
 import (
 	"context"
+	"os"
+	"strconv"
+	"strings"
 
 	"github.com/kong/kong-debug-tool/pkg/collector"
 	log "github.com/sirupsen/logrus"
@@ -75,6 +78,11 @@ var collectCmd = &cobra.Command{
 			Debug:                   debug,
 		}
 
+		// Apply environment variable overrides (backward compatibility).
+		// These were previously checked inside the library but are now
+		// handled at the CLI layer so the library only uses Config values.
+		applyEnvVarOverrides(cfg)
+
 		// Run the collector
 		ctx := context.Background()
 		result, err := collector.Collect(ctx, cfg)
@@ -115,5 +123,44 @@ func init() {
 	collectCmd.PersistentFlags().StringVarP(&prefixDir, "prefix-dir", "k", "/usr/local/kong", "The path to your prefix directory for determining VM log locations. Default: /usr/local/kong")
 	collectCmd.PersistentFlags().BoolVarP(&disableKDDCollection, "disable-kdd", "q", false, "Disable KDD config collection. Default: false.")
 	collectCmd.PersistentFlags().StringSliceVarP(&strToRedact, "redact-logs", "R", nil, "CSV list of terms to redact during log extraction.")
-	collectCmd.PersistentFlags().BoolVarP(&sanitizeConfigs, "sanitize", "s", false, "Sanitize sensitive data in config dumps. Default: false.")
+	collectCmd.PersistentFlags().BoolVarP(&sanitizeConfigs, "sanitize", "s", true, "Sanitize sensitive data in config dumps. Default: true.")
+}
+
+// applyEnvVarOverrides applies environment variable overrides to the collector config.
+// This preserves backward compatibility for standalone kdt usage. When used as a library
+// (e.g., from kongctl), the calling code controls all Config values directly.
+func applyEnvVarOverrides(cfg *collector.Config) {
+	if v := os.Getenv("KONG_RUNTIME"); v != "" && cfg.Runtime == "" {
+		cfg.Runtime = v
+	}
+	if v := os.Getenv("KONG_ADDR"); v != "" {
+		cfg.KongAddr = v
+	}
+	if v := os.Getenv("RBAC_HEADER"); v != "" {
+		cfg.RBACHeaders = strings.Split(v, ",")
+	}
+	if os.Getenv("KONG_KONNECT_MODE") != "" {
+		// Use KONG_KDD_KONNECT to avoid collision with native Kong variable KONG_KONNECT_MODE
+		// https://docs.konghq.com/gateway/latest/reference/configuration/#konnect_mode
+		if v, err := strconv.ParseBool(os.Getenv("KONG_KDD_KONNECT")); err == nil {
+			cfg.KonnectMode = v
+		}
+	}
+	if v := os.Getenv("DISABLE_KDD"); v != "" {
+		cfg.DisableKDD = (v == "true")
+	}
+	if v := os.Getenv("DUMP_WORKSPACE_CONFIGS"); v != "" {
+		cfg.DumpWorkspaceConfigs = (v == "true")
+	}
+	if v := os.Getenv("DOCKER_LOGS_SINCE"); v != "" {
+		cfg.DockerLogsSince = v
+	}
+	if v := os.Getenv("TARGET_PODS"); v != "" {
+		cfg.TargetPods = strings.Split(v, ",")
+	}
+	if v := os.Getenv("K8S_LOGS_SINCE_SECONDS"); v != "" {
+		if parsed, err := strconv.ParseInt(v, 10, 64); err == nil {
+			cfg.K8sLogsSinceSeconds = parsed
+		}
+	}
 }

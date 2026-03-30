@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/pkg/errors"
@@ -35,14 +36,23 @@ import (
 )
 
 // CreateArchive creates a tar.gz archive from the given files.
+// When outputDir is non-empty, the archive is written to that directory.
 // Returns the path to the created archive.
-func CreateArchive(filesToWrite []string) (string, error) {
+func CreateArchive(filesToWrite []string, outputDir string) (string, error) {
 	if len(filesToWrite) == 0 {
 		log.Warn("No files to write to archive")
 		return "", nil
 	}
 
 	outputName := fmt.Sprintf("%s-support.tar.gz", time.Now().Format("2006-01-02-15-04-05"))
+
+	if outputDir != "" {
+		if err := os.MkdirAll(outputDir, 0755); err != nil {
+			return "", fmt.Errorf("creating output directory %s: %w", outputDir, err)
+		}
+		outputName = filepath.Join(outputDir, outputName)
+	}
+
 	log.WithField("filename", outputName).Info("Creating archive")
 
 	output, err := os.Create(outputName)

@@ -168,11 +168,7 @@ func CollectDocker(ctx context.Context, cfg *Config) ([]string, error) {
 			continue
 		}
 
-		// Check for environment variable override
 		logsSinceDocker := cfg.DockerLogsSince
-		if os.Getenv("DOCKER_LOGS_SINCE") != "" {
-			logsSinceDocker = os.Getenv("DOCKER_LOGS_SINCE")
-		}
 
 		options := container.LogsOptions{}
 
